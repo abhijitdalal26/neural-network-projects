@@ -1,4 +1,4 @@
-# ERA 0 — Neural Foundations (1950–1985)
+# Neural Foundations 
 
 ## Core Question
 
@@ -49,5 +49,3 @@ The breakthrough that ended the first AI Winter:
 
 - **Backpropagation** (popularized in 1986 by Rumelhart, Hinton & Williams) + sigmoid activations + chain rule.
 - Suddenly we could train **multilayer perceptrons (MLPs)**.
-
-This is exactly why Era 0 ends in 1985 and Era 1 explodes in 1986.
