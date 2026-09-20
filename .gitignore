@@ -22,3 +22,12 @@ data/
 *.tsv
 *.h5
 
+# Transformer checkpoints & tokenizers
+opus_books_weights/
+weights/
+*_weights/
+tokenizer_*.json
+runs/
+*.pt
+!venv/**/*.pt
+
