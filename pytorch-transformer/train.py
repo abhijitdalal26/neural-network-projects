@@ -21,6 +21,24 @@ from tokenizers.pre_tokenizers import Whitespace
 import torchmetrics
 from torch.utils.tensorboard import SummaryWriter
 
+# Hotfix for newer huggingface_hub raising HfUriError on legacy `opus_books` URI
+# `hf://datasets/opus_books@...` has no namespace but newer Hub requires `namespace/name`.
+# Patch _parse_repo_body to inject dummy namespace before validation — safe no-op on older Hub.
+try:
+    import huggingface_hub.utils._hf_uris as _hf_uris
+    _orig_parse_repo_body = _hf_uris._parse_repo_body
+    def _patched_parse_repo_body(location, type_, raw):
+        try:
+            return _orig_parse_repo_body(location, type_, raw)
+        except Exception:
+            if "hf://datasets/opus_books" in raw:
+                raw2 = raw.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
+                return _orig_parse_repo_body(location, type_, raw2)
+            raise
+    _hf_uris._parse_repo_body = _patched_parse_repo_body
+except Exception:
+    pass
+
 
 def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
     sos_idx = tokenizer_tgt.token_to_id('[SOS]')
