@@ -1,24 +1,28 @@
 from pathlib import Path
+import config as cfgmod
 from config import get_config, latest_weights_file_path 
 from model import build_transformer
 from tokenizers import Tokenizer
 from datasets import load_dataset
-from dataset import BilingualDataset
+from dataset import BilingualDataset, causal_mask
 import torch
 import sys
 
-def translate(sentence: str):
+def translate(sentence: str, config=None):
     # Define the device, tokenizers, and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
-    config = get_config()
+    if config is None:
+        config = cfgmod.get_config()
     tokenizer_src = Tokenizer.from_file(str(Path(config['tokenizer_file'].format(config['lang_src']))))
     tokenizer_tgt = Tokenizer.from_file(str(Path(config['tokenizer_file'].format(config['lang_tgt']))))
     model = build_transformer(tokenizer_src.get_vocab_size(), tokenizer_tgt.get_vocab_size(), config["seq_len"], config['seq_len'], d_model=config['d_model']).to(device)
 
     # Load the pretrained weights
-    model_filename = latest_weights_file_path(config)
-    state = torch.load(model_filename)
+    model_filename = cfgmod.latest_weights_file_path(config)
+    if model_filename is None:
+        raise FileNotFoundError(f"No checkpoint found in {config['model_folder']}. Please train the model first.")
+    state = torch.load(model_filename, map_location=device)
     model.load_state_dict(state['model_state_dict'])
 
     # if the sentence is a number use it as an index to the test set
@@ -57,7 +61,7 @@ def translate(sentence: str):
         # Generate the translation word by word
         while decoder_input.size(1) < seq_len:
             # build mask for target and calculate output
-            decoder_mask = torch.triu(torch.ones((1, decoder_input.size(1), decoder_input.size(1))), diagonal=1).type(torch.int).type_as(source_mask).to(device)
+            decoder_mask = causal_mask(decoder_input.size(1)).type_as(source_mask).to(device)
             out = model.decode(encoder_output, source_mask, decoder_input, decoder_mask)
 
             # project next token
