@@ -28,20 +28,44 @@ try:
     import huggingface_hub.utils._hf_uris as _hf_uris  # type: ignore
     if not getattr(_hf_uris, "_opus_books_patched", False):
         _orig_parse_repo_body = _hf_uris._parse_repo_body
+        _orig_HfUri_init = _hf_uris.HfUri.__post_init__  # also guard HfUri id check
+
         def _patched_parse_repo_body(*args, **kwargs):  # noqa: ANN002,ANN003
             try:
                 return _orig_parse_repo_body(*args, **kwargs)
             except Exception:
-                all_strs = list(args) + list(kwargs.values())
-                raw = next((v for v in all_strs if isinstance(v, str) and "hf://datasets/opus_books" in v), None)
-                if raw is not None:
-                    raw2 = raw.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
-                    new_args = tuple(raw2 if (isinstance(a, str) and a == raw) else a for a in args)
-                    new_kwargs = {k: (raw2 if (isinstance(v, str) and v == raw) else v) for k, v in kwargs.items()}
-                    # call original directly — never the patched wrapper, avoids recursion
+                # location is args[0] when called as _parse_repo_body(location, type_, raw=...)
+                new_args = list(args)
+                new_kwargs = dict(kwargs)
+                patched = False
+                # patch location (e.g. "opus_books@..." or "opus_books")
+                for i, a in enumerate(new_args):
+                    if isinstance(a, str) and a.startswith("opus_books"):
+                        # "opus_books@..." -> "huggingface/opus_books@...", "opus_books" -> "huggingface/opus_books"
+                        new_args[i] = a.replace("opus_books", "huggingface/opus_books", 1)
+                        patched = True
+                    elif isinstance(a, str) and a == "opus_books":
+                        new_args[i] = "huggingface/opus_books"
+                        patched = True
+                for k, v in list(new_kwargs.items()):
+                    if isinstance(v, str) and "hf://datasets/opus_books" in v:
+                        new_kwargs[k] = v.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
+                        patched = True
+                    elif isinstance(v, str) and v.startswith("opus_books"):
+                        new_kwargs[k] = v.replace("opus_books", "huggingface/opus_books", 1)
+                        patched = True
+                if patched:
                     return _orig_parse_repo_body(*new_args, **new_kwargs)
                 raise
+
+        def _patched_HfUri_init(self):  # noqa: ANN001
+            # allow legacy single-part id "opus_books" by injecting dummy namespace before validation
+            if getattr(self, "id", "") == "opus_books":
+                object.__setattr__(self, "id", "huggingface/opus_books")
+            return _orig_HfUri_init(self)
+
         _hf_uris._parse_repo_body = _patched_parse_repo_body
+        _hf_uris.HfUri.__post_init__ = _patched_HfUri_init  # type: ignore[method-assign]
         _hf_uris._opus_books_patched = True  # type: ignore[attr-defined]
 except Exception:
     pass
