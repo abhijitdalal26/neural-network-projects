@@ -21,38 +21,6 @@ from tokenizers.pre_tokenizers import Whitespace
 import torchmetrics
 from torch.utils.tensorboard import SummaryWriter
 
-# Fix for legacy `opus_books` with newer HF Hub (expects namespace/name)
-# Simple: opus_books -> huggingface/opus_books before Hub validates
-try:
-    import huggingface_hub.utils._hf_uris as _hf_uris  # type: ignore
-    # Unwrap stale patch from previous kernel import (Colab does `from train import train_model` twice)
-    if getattr(_hf_uris, "_opus_books_patched", False):
-        if hasattr(_hf_uris, "_orig_parse_repo_body_orig"):
-            _hf_uris._parse_repo_body = _hf_uris._orig_parse_repo_body_orig  # type: ignore[attr-defined]
-        if hasattr(_hf_uris, "_orig_HfUri_init_orig"):
-            _hf_uris.HfUri.__post_init__ = _hf_uris._orig_HfUri_init_orig  # type: ignore[attr-defined]
-        _hf_uris._opus_books_patched = False  # type: ignore[attr-defined]
-    _orig = _hf_uris._parse_repo_body
-    _orig_init = _hf_uris.HfUri.__post_init__
-    _hf_uris._orig_parse_repo_body_orig = _orig  # type: ignore[attr-defined]
-    _hf_uris._orig_HfUri_init_orig = _orig_init  # type: ignore[attr-defined]
-    def _patched(*a, **kw):
-        try:
-            return _orig(*a, **kw)
-        except Exception:
-            a2 = [x.replace("opus_books", "huggingface/opus_books", 1) if isinstance(x, str) and "opus_books" in x else x for x in a]
-            kw2 = {k: v.replace("opus_books", "huggingface/opus_books", 1) if isinstance(v, str) and "opus_books" in v else v for k, v in kw.items()}
-            return _orig(*a2, **kw2)
-    _hf_uris._parse_repo_body = _patched  # type: ignore[method-assign]
-    def _patched_init(self):  # noqa: ANN001
-        if getattr(self, "id", "") == "opus_books":
-            object.__setattr__(self, "id", "huggingface/opus_books")
-        return _orig_init(self)
-    _hf_uris.HfUri.__post_init__ = _patched_init  # type: ignore[method-assign]
-    _hf_uris._opus_books_patched = True  # type: ignore[attr-defined]
-except Exception:
-    pass
-
 
 def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
     sos_idx = tokenizer_tgt.token_to_id('[SOS]')
@@ -229,7 +197,8 @@ def train_model(config):
     device = torch.device(device)
 
     # Make sure the weights folder exists
-    Path(f"{config['datasource']}_{config['model_folder']}").mkdir(parents=True, exist_ok=True)
+    from config import _model_dir as _md
+    Path(_md(config)).mkdir(parents=True, exist_ok=True)
 
     train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_ds(config)
     model = get_model(config, tokenizer_src.get_vocab_size(), tokenizer_tgt.get_vocab_size()).to(device)

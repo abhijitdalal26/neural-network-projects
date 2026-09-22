@@ -13,4 +13,4 @@ This repo collects hands-on implementations as I learn: vanilla Transformer for 
 1. Open `pytorch-transformer/colab_transformer_training.ipynb` → Runtime T4 GPU → Run All (~3.5h for 20 epochs, or `SKIP_TRAIN=True` to demo from Drive checkpoint).
 2. Local: `pip install -r pytorch-transformer/requirements.txt` then `python pytorch-transformer/train.py`
 
-Works with latest `datasets`/`huggingface_hub` — includes a small patch for the legacy `opus_books` HF URI.
+Dataset is `Helsinki-NLP/opus_books` (public, 38k en-nl pairs) — no HF token needed, works with latest `datasets`/`huggingface_hub`.
