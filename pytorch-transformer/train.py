@@ -21,51 +21,26 @@ from tokenizers.pre_tokenizers import Whitespace
 import torchmetrics
 from torch.utils.tensorboard import SummaryWriter
 
-# Hotfix for newer huggingface_hub raising HfUriError on legacy `opus_books` URI
-# `hf://datasets/opus_books@...` has no namespace but newer Hub requires `namespace/name`.
-# Guard against double-patch (notebook + train both patch) and varargs for 2 vs 3 arg signatures.
+# Fix for legacy `opus_books` with newer HF Hub (expects namespace/name)
 try:
     import huggingface_hub.utils._hf_uris as _hf_uris  # type: ignore
     if not getattr(_hf_uris, "_opus_books_patched", False):
-        _orig_parse_repo_body = _hf_uris._parse_repo_body
-        _orig_HfUri_init = _hf_uris.HfUri.__post_init__  # also guard HfUri id check
-
-        def _patched_parse_repo_body(*args, **kwargs):  # noqa: ANN002,ANN003
+        _orig = _hf_uris._parse_repo_body
+        def _patched(*a, **kw):
             try:
-                return _orig_parse_repo_body(*args, **kwargs)
+                return _orig(*a, **kw)
             except Exception:
-                # location is args[0] when called as _parse_repo_body(location, type_, raw=...)
-                new_args = list(args)
-                new_kwargs = dict(kwargs)
-                patched = False
-                # patch location (e.g. "opus_books@..." or "opus_books")
-                for i, a in enumerate(new_args):
-                    if isinstance(a, str) and a.startswith("opus_books"):
-                        # "opus_books@..." -> "huggingface/opus_books@...", "opus_books" -> "huggingface/opus_books"
-                        new_args[i] = a.replace("opus_books", "huggingface/opus_books", 1)
-                        patched = True
-                    elif isinstance(a, str) and a == "opus_books":
-                        new_args[i] = "huggingface/opus_books"
-                        patched = True
-                for k, v in list(new_kwargs.items()):
-                    if isinstance(v, str) and "hf://datasets/opus_books" in v:
-                        new_kwargs[k] = v.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
-                        patched = True
-                    elif isinstance(v, str) and v.startswith("opus_books"):
-                        new_kwargs[k] = v.replace("opus_books", "huggingface/opus_books", 1)
-                        patched = True
-                if patched:
-                    return _orig_parse_repo_body(*new_args, **new_kwargs)
-                raise
-
-        def _patched_HfUri_init(self):  # noqa: ANN001
-            # allow legacy single-part id "opus_books" by injecting dummy namespace before validation
+                a2 = [x.replace("opus_books", "huggingface/opus_books", 1) if isinstance(x, str) and "opus_books" in x else x for x in a]
+                kw2 = {k: v.replace("opus_books", "huggingface/opus_books", 1) if isinstance(v, str) and "opus_books" in v else v for k, v in kw.items()}
+                return _orig(*a2, **kw2)
+        _hf_uris._parse_repo_body = _patched  # type: ignore[method-assign]
+        # also allow `HfUri(id=\"opus_books\")`
+        _orig_init = _hf_uris.HfUri.__post_init__
+        def _patched_init(self):  # noqa: ANN001
             if getattr(self, "id", "") == "opus_books":
                 object.__setattr__(self, "id", "huggingface/opus_books")
-            return _orig_HfUri_init(self)
-
-        _hf_uris._parse_repo_body = _patched_parse_repo_body
-        _hf_uris.HfUri.__post_init__ = _patched_HfUri_init  # type: ignore[method-assign]
+            return _orig_init(self)
+        _hf_uris.HfUri.__post_init__ = _patched_init  # type: ignore[method-assign]
         _hf_uris._opus_books_patched = True  # type: ignore[attr-defined]
 except Exception:
     pass
