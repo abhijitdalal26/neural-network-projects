@@ -23,31 +23,26 @@ from torch.utils.tensorboard import SummaryWriter
 
 # Hotfix for newer huggingface_hub raising HfUriError on legacy `opus_books` URI
 # `hf://datasets/opus_books@...` has no namespace but newer Hub requires `namespace/name`.
-# Signature of _parse_repo_body varies by hub version (2 vs 3 args) — use *args/*kwargs passthrough.
+# Guard against double-patch (notebook + train both patch) and varargs for 2 vs 3 arg signatures.
 try:
-    import huggingface_hub.utils._hf_uris as _hf_uris
-    _orig_parse_repo_body = _hf_uris._parse_repo_body
-    def _patched_parse_repo_body(*args, **kwargs):
-        try:
-            return _orig_parse_repo_body(*args, **kwargs)
-        except Exception:
-            # collect all string args/kwargs to find the hf:// URI
-            all_strs = list(args) + list(kwargs.values())
-            raw_idx = None
-            raw = None
-            for i, v in enumerate(all_strs):
-                if isinstance(v, str) and "hf://datasets/opus_books" in v:
-                    raw = v
-                    # map back to original args position for replacement
-                    raw_idx = i
-                    break
-            if raw is not None:
-                raw2 = raw.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
-                new_args = tuple(raw2 if (isinstance(a, str) and a == raw) else a for a in args)
-                new_kwargs = {k: (raw2 if (isinstance(val, str) and val == raw) else val) for k, val in kwargs.items()}
-                return _orig_parse_repo_body(*new_args, **new_kwargs)
-            raise
-    _hf_uris._parse_repo_body = _patched_parse_repo_body
+    import huggingface_hub.utils._hf_uris as _hf_uris  # type: ignore
+    if not getattr(_hf_uris, "_opus_books_patched", False):
+        _orig_parse_repo_body = _hf_uris._parse_repo_body
+        def _patched_parse_repo_body(*args, **kwargs):  # noqa: ANN002,ANN003
+            try:
+                return _orig_parse_repo_body(*args, **kwargs)
+            except Exception:
+                all_strs = list(args) + list(kwargs.values())
+                raw = next((v for v in all_strs if isinstance(v, str) and "hf://datasets/opus_books" in v), None)
+                if raw is not None:
+                    raw2 = raw.replace("hf://datasets/opus_books", "hf://datasets/huggingface/opus_books")
+                    new_args = tuple(raw2 if (isinstance(a, str) and a == raw) else a for a in args)
+                    new_kwargs = {k: (raw2 if (isinstance(v, str) and v == raw) else v) for k, v in kwargs.items()}
+                    # call original directly — never the patched wrapper, avoids recursion
+                    return _orig_parse_repo_body(*new_args, **new_kwargs)
+                raise
+        _hf_uris._parse_repo_body = _patched_parse_repo_body
+        _hf_uris._opus_books_patched = True  # type: ignore[attr-defined]
 except Exception:
     pass
 
